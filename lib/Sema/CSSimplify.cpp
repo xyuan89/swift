@@ -2685,6 +2685,7 @@ assessRequirementFailureImpact(ConstraintSystem &cs, Type requirementType,
 /// Attempt to fix missing arguments by introducing type variables
 /// and inferring their types from parameters.
 static bool fixMissingArguments(ConstraintSystem &cs, ASTNode anchor,
+                                FunctionType *contextualType,
                                 SmallVectorImpl<AnyFunctionType::Param> &args,
                                 ArrayRef<AnyFunctionType::Param> params,
                                 unsigned numMissing,
@@ -2769,7 +2770,8 @@ static bool fixMissingArguments(ConstraintSystem &cs, ASTNode anchor,
   }
 
   auto *fix = AddMissingArguments::create(cs, synthesizedArgs,
-                                          cs.getConstraintLocator(locator));
+                                          cs.getConstraintLocator(locator),
+                                          contextualType);
   if (cs.recordFix(fix))
     return true;
 
@@ -3694,7 +3696,7 @@ ConstraintSystem::matchFunctionTypes(FunctionType *func1, FunctionType *func2,
         // If there are missing arguments, let's add them
         // using parameter as a template.
         if (diff < 0) {
-          if (fixMissingArguments(*this, anchor, func1Params, func2Params,
+          if (fixMissingArguments(*this, anchor, func2, func1Params, func2Params,
                                   abs(diff), loc))
             return SolutionKind::Error;
         } else {

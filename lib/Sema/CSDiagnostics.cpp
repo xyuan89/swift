@@ -5492,6 +5492,19 @@ SourceLoc MissingArgumentsFailure::getLoc() const {
 bool MissingArgumentsFailure::diagnoseAsError() {
   auto *locator = getLocator();
 
+  // Function matching knows the expected type even when the closure is nested
+  // in a tuple or a conditional expression. Diagnose these closures using that
+  // type instead of trying to recover it from the outer expression's context.
+  if (ContextualType) {
+    if (auto *closure = getAsExpr<ClosureExpr>(getAnchor())) {
+      if (isMisplacedMissingArgument(getSolution(), locator))
+        return false;
+
+      return diagnoseClosure(
+          closure, resolveType(ContextualType)->castTo<FunctionType>());
+    }
+  }
+
   if (locator->directlyAt<AssignExpr>()) {
     auto *assignment = castToExpr<AssignExpr>(locator->getAnchor());
     auto destTy = getType(assignment->getDest());

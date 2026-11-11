@@ -1574,13 +1574,15 @@ public:
 };
 
 class MissingArgumentsFailure final : public FailureDiagnostic {
+  FunctionType *ContextualType;
   SmallVector<SynthesizedArg, 4> SynthesizedArgs;
 
 public:
   MissingArgumentsFailure(const Solution &solution,
                           ArrayRef<SynthesizedArg> synthesizedArgs,
-                          ConstraintLocator *locator)
-      : FailureDiagnostic(solution, locator),
+                          ConstraintLocator *locator,
+                          FunctionType *contextualType = nullptr)
+      : FailureDiagnostic(solution, locator), ContextualType(contextualType),
         SynthesizedArgs(synthesizedArgs.begin(), synthesizedArgs.end()) {
     assert(!SynthesizedArgs.empty() && "No missing arguments?!");
   }

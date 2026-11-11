@@ -1911,13 +1911,14 @@ class AddMissingArguments final
           AddMissingArguments, SynthesizedArg> {
   friend TrailingObjects;
 
+  FunctionType *ContextualType;
   unsigned NumSynthesized;
 
   AddMissingArguments(ConstraintSystem &cs,
                       ArrayRef<SynthesizedArg> synthesizedArgs,
-                      ConstraintLocator *locator)
+                      ConstraintLocator *locator, FunctionType *contextualType)
       : ConstraintFix(cs, FixKind::AddMissingArguments, locator),
-        NumSynthesized(synthesizedArgs.size()) {
+        ContextualType(contextualType), NumSynthesized(synthesizedArgs.size()) {
     std::uninitialized_copy(synthesizedArgs.begin(), synthesizedArgs.end(),
                             getSynthesizedArgumentsBuf().begin());
   }
@@ -1937,7 +1938,8 @@ public:
 
   static AddMissingArguments *create(ConstraintSystem &cs,
                                      ArrayRef<SynthesizedArg> synthesizedArgs,
-                                     ConstraintLocator *locator);
+                                     ConstraintLocator *locator,
+                                     FunctionType *contextualType = nullptr);
 
   static bool classof(const ConstraintFix *fix) {
     return fix->getKind() == FixKind::AddMissingArguments;

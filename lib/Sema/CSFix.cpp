@@ -1272,17 +1272,19 @@ AllowClosureParamDestructuring::create(ConstraintSystem &cs,
 bool AddMissingArguments::diagnose(const Solution &solution,
                                    bool asNote) const {
   MissingArgumentsFailure failure(solution, getSynthesizedArguments(),
-                                  getLocator());
+                                  getLocator(), ContextualType);
   return failure.diagnose(asNote);
 }
 
 AddMissingArguments *
 AddMissingArguments::create(ConstraintSystem &cs,
                             ArrayRef<SynthesizedArg> synthesizedArgs,
-                            ConstraintLocator *locator) {
+                            ConstraintLocator *locator,
+                            FunctionType *contextualType) {
   unsigned size = totalSizeToAlloc<SynthesizedArg>(synthesizedArgs.size());
   void *mem = cs.getAllocator().Allocate(size, alignof(AddMissingArguments));
-  return new (mem) AddMissingArguments(cs, synthesizedArgs, locator);
+  return new (mem)
+      AddMissingArguments(cs, synthesizedArgs, locator, contextualType);
 }
 
 bool RemoveExtraneousArguments::diagnose(const Solution &solution,
