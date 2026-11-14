@@ -12,15 +12,89 @@
 
 #include "SemaFixture.h"
 #include "swift/AST/Decl.h"
+#include "swift/AST/DiagnosticConsumer.h"
 #include "swift/AST/Expr.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Types.h"
+#include "swift/Sema/CSFix.h"
 #include "swift/Sema/ConstraintSystem.h"
 #include "swift/Sema/TypeVariableType.h"
 
 using namespace swift;
 using namespace swift::unittest;
 using namespace swift::constraints;
+
+TEST_F(SemaTest, TestMissingClosureArgumentsAfterRemovingIsolatedParameter) {
+  // Exercise function matching directly: closure constraint generation does
+  // not currently infer nonisolated(nonsending) isolation on closure literals.
+  ConstraintSystem cs(DC, ConstraintSystemFlags::AllowFixes);
+
+  auto bufferID = SourceMgr.addMemBufferCopy("{ }");
+  auto startLoc = SourceMgr.getLocForBufferStart(bufferID);
+  auto *closure = new (Context) ClosureExpr(
+      DeclAttributes(), /*bracketRange=*/SourceRange(),
+      /*capturedSelfDecl=*/nullptr, ParameterList::create(Context, {}),
+      /*asyncLoc=*/SourceLoc(), /*throwsLoc=*/SourceLoc(),
+      /*thrownType=*/nullptr, /*arrowLoc=*/SourceLoc(), /*inLoc=*/SourceLoc(),
+      /*explicitResultType=*/nullptr, DC);
+  closure->setDiscriminator(0);
+  closure->setBody(
+      BraceStmt::create(Context, startLoc, {}, startLoc.getAdvancedLoc(2)));
+
+  auto *actor = new (Context) ClassDecl(
+      SourceLoc(), Context.getIdentifier("TestActor"), SourceLoc(),
+      /*Inherited=*/{}, /*GenericParams=*/nullptr, DC, /*isActor=*/true);
+  auto actorType = ClassType::get(actor, Type(), Context);
+  auto intType = getStdlibType("Int");
+  auto info = FunctionType::ExtInfo().withAsync();
+  auto *closureType = FunctionType::get(
+      {}, {}, intType,
+      info.withIsolation(FunctionTypeIsolation::forNonisolatedNonsending()));
+  auto *contextualType = FunctionType::get(
+      {FunctionType::Param(actorType, Identifier(),
+                           ParameterTypeFlags().withIsolated(true)),
+       FunctionType::Param(intType)},
+      {}, intType, info.withIsolation(FunctionTypeIsolation::forParameter()));
+
+  cs.setClosureType(closure, closureType);
+  cs.setType(closure, closureType);
+  cs.addConstraint(ConstraintKind::Conversion, closureType, contextualType,
+                   cs.getConstraintLocator(closure));
+
+  SmallVector<Solution, 1> solutions;
+  ASSERT_FALSE(cs.solve(solutions));
+  ASSERT_EQ(solutions.size(), 1u);
+  const auto &solution = solutions.front();
+  ASSERT_EQ(solution.Fixes.size(), 1u);
+  ASSERT_TRUE(isa<AddMissingArguments>(solution.Fixes.front()));
+
+  class Consumer : public DiagnosticConsumer {
+  public:
+    unsigned Count = 0;
+    SourceLoc FixItLoc;
+
+    void handleDiagnostic(SourceManager &SM,
+                          const DiagnosticInfo &info) override {
+      ++Count;
+      std::string message;
+      llvm::raw_string_ostream out(message);
+      DiagnosticEngine::formatDiagnosticText(out, info.FormatString,
+                                             info.FormatArgs);
+      EXPECT_EQ(message, "contextual type for closure argument list expects 1 "
+                         "argument, which cannot be implicitly ignored");
+      ASSERT_EQ(info.FixIts.size(), 1u);
+      EXPECT_EQ(info.FixIts.front().getText(), " _ in");
+      EXPECT_EQ(info.FixIts.front().getRange().getStart(), FixItLoc);
+      EXPECT_EQ(info.FixIts.front().getRange().getByteLength(), 0u);
+    }
+  } consumer;
+  consumer.FixItLoc = startLoc.getAdvancedLoc(1);
+
+  Diags.addConsumer(consumer);
+  EXPECT_TRUE(solution.Fixes.front()->diagnose(solution));
+  Diags.removeConsumer(consumer);
+  EXPECT_EQ(consumer.Count, 1u);
+}
 
 TEST_F(SemaTest, TestTrailingClosureMatchRecordingForIdenticalFunctions) {
   ConstraintSystem cs(DC, ConstraintSystemOptions());

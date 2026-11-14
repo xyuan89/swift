@@ -3696,8 +3696,16 @@ ConstraintSystem::matchFunctionTypes(FunctionType *func1, FunctionType *func2,
         // If there are missing arguments, let's add them
         // using parameter as a template.
         if (diff < 0) {
-          if (fixMissingArguments(*this, anchor, func2, func1Params, func2Params,
-                                  abs(diff), loc))
+          // Diagnose against the adjusted parameters used for matching, which
+          // may have been imploded or had an isolated parameter removed.
+          auto info = func2->getExtInfo();
+          if (info.getIsolation().isParameter() &&
+              !hasIsolatedParameter(func2Params))
+            info = info.withIsolation(func1->getIsolation());
+          auto *contextualType = FunctionType::get(
+              func2Params, func2->getYields(), func2->getResult(), info);
+          if (fixMissingArguments(*this, anchor, contextualType, func1Params,
+                                  func2Params, abs(diff), loc))
             return SolutionKind::Error;
         } else {
           // If there are extraneous arguments, let's remove
